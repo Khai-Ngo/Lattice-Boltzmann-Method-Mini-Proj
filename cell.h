@@ -9,12 +9,16 @@ class Cell{
         // like the diagram in the lecture notes: static, E, W, N, S, NE, NW, SW, SE
         const std::array<int, 9>ex {{0,1,-1,0,0,1,-1,-1,1}};
         const std::array<int, 9>ey {{0,0,0,1,-1,1,1,-1,-1}};
-    public:
         static std::array<double, 9>f_i;
+    public:
         Cell(){
             f_i = {0,0,0,0,0,0,0,0,0};
         }
         ~Cell();
+        inline void cellInit(){
+            // have some initial flow to the right
+            f_i = {0,1,0,0,0,0,0,0,0};
+        }
         // return value of macro density for a cell
         inline double density(){
             double ret = 0;
