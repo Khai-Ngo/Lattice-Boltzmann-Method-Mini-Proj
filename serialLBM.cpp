@@ -4,6 +4,7 @@
 #include <utility>
 #include <fstream>
 #include <cmath>
+#include <string>
 
 namespace LBM{
 class Cell{
@@ -12,12 +13,15 @@ class Cell{
         // like the diagram in the lecture notes: static, E, W, N, S, NE, SW, NW, SE
         const std::array<int, 9>ex {{0,1,-1,0,0,1,-1,-1,1}};
         const std::array<int, 9>ey {{0,0,0,1,-1,1,-1,1,-1}};
-        // concurrent f_i and its duplicate. Default to same values as the weights (recommended by textbooks)
-        std::array<double, 9>f_i={{4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36}};
-        std::array<double, 9>f_dup={{4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36}}; // for updating. Avoid overwriting data before they get propagated
+        std::array<double, 9>f_i;
+        std::array<double, 9>f_dup; // for updating. Avoid overwriting data before they get propagated
     public:
-        Cell();
-        // if you want a different initial flow
+        Cell(){
+             // concurrent f_i and its duplicate. Default to same values as the weights (recommended by textbooks)
+            this->f_i = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
+            this->f_dup = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
+        }
+        // if you want a different initial flow, specify it yourself
         Cell(const std::array<double, 9>& f_i){
             this->f_i = f_i;
             this->f_dup = f_i;
@@ -275,10 +279,11 @@ class LatticeBoltzmann{
             this->tau = tau;
             this->lat_size = l*w;
             // initialize all lattice cells to default distributions. Parallelisable
-            Cell initCell; // does not look neat. Leave it for now
+            Cell *initCell = new Cell(); // does not look neat. Leave it for now
             for (int i=0; i<lat_size; i++){        
-                cellLattice.push_back(initCell);
-            }       
+                this->cellLattice.push_back(*initCell);
+            }
+            delete initCell;      
         }
         void simulate(int time){
             for (int t=0; t<time;t++){
@@ -323,7 +328,7 @@ class LatticeBoltzmann{
                 sync_all_nodes();
             }
         }
-        void exportRho(char* fname){
+        void exportRho(std::string& fname){
             std::ofstream f (fname);
             if (!f){
                 std::cout<<"Can't open "<<fname<<" for writing!\n";
@@ -335,7 +340,7 @@ class LatticeBoltzmann{
             }
             f.close();
         }
-        void exportSpd(char* fname){
+        void exportSpd(std::string& fname){
             std::ofstream f (fname);
             if (!f){
                 std::cout<<"Can't open "<<fname<<" for writing!\n";
@@ -359,17 +364,22 @@ int xy_to_index(std::pair<int, int> coord, int l){
     return std::get<0>(coord)*l+std::get<1>(coord);
 }
 */
-
+}
 int main(int argc, char* argv[]){
     int l = 4;
     int w = 4;
     int lat_size = l*w; 
-    int time = 1000;
+    int time = 1;
     int tau = 0.5;  
-    LatticeBoltzmann *mySim = new LatticeBoltzmann(l,w,tau);
-    mySim->exportRho("init_rho.txt"); // should be all ones
-    mySim->exportSpd("init_speed.txt"); // should be all zeros
-    //mySim->simulate(time);
+    LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l,w,tau);
+    std::string inf1("init_rho.txt");
+    std::string inf2("init_spd.txt");
+    mySim->exportRho(inf1); // should be all ones
+    mySim->exportSpd(inf2); // should be all zeros
+    mySim->simulate(time);
+    std::string inf3("final_rho.txt");
+    std::string inf4("final_spd.txt");
+    mySim->exportRho(inf3);
+    mySim->exportRho(inf4);
     return 0;
-}
 }
