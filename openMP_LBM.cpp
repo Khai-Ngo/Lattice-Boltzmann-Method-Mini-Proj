@@ -189,35 +189,49 @@ class LatticeBoltzmann{
                 syncAll();
                 // Apply boundary condition
                 // east side sink
-                for (int j=l-1;j<lat_size;j+=l){
-                    // dont interpret this as propagation, more like re-assignment to fit BC
-                    this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
-                    this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
-                    this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
-                }
-                // top bounce
-                for (int i =0; i<l;i++){
-                    this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
-                    this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
-                    this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
-                }
-                // bottom bounce
-                for (int i=lat_size-l;i<lat_size;i++){
-                    this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3));
-                    this->cellLattice[i].update_fi(6, cellLattice[i].get_fi(5));
-                    this->cellLattice[i].update_fi(8, cellLattice[i].get_fi(7));
-                }
-                // inlet fixed x-velocity
-                // this step actually also initializes the west side inlet flow
-                for (int j=l;j<=lat_size-2*l;j+=l){
-                    double rho = cellLattice[j].density();
-                    double f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
-                    double f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
-                    double f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
-                    this->cellLattice[j].update_fi(1, f1update);
-                    this->cellLattice[j].update_fi(5, f5update);
-                    this->cellLattice[j].update_fi(8, f8update);
-                }
+        
+                   
+                    #pragma omp for
+                    for (int j=l-1;j<lat_size;j+=l){
+                        // dont interpret this as propagation, more like re-assignment to fit BC
+                        this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
+                        this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
+                        this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
+                    }
+                    
+                   
+                    // top bounce
+                    #pragma omp for
+                    for (int i =0; i<l;i++){
+                        this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
+                        this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
+                        this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
+                    }
+                    
+                    // bottom bounce
+                  
+                    #pragma omp for
+                    for (int i=lat_size-l;i<lat_size;i++){
+                        this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3));
+                        this->cellLattice[i].update_fi(6, cellLattice[i].get_fi(5));
+                        this->cellLattice[i].update_fi(8, cellLattice[i].get_fi(7));
+                    }
+                    
+                    // inlet fixed x-velocity
+                    // this step actually also initializes the west side inlet flow
+                 
+                    #pragma omp for
+                    for (int j=l;j<=lat_size-2*l;j+=l){
+                        double rho = cellLattice[j].density();
+                        double f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
+                        double f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                        double f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                        this->cellLattice[j].update_fi(1, f1update);
+                        this->cellLattice[j].update_fi(5, f5update);
+                        this->cellLattice[j].update_fi(8, f8update);
+                    }
+                    
+                //}
                 syncAll();  
             }
 
@@ -280,7 +294,7 @@ int main(int argc, char* argv[]){
     mySim->exportxVel(inf2);
     */
 
-    for (int i = 1; i< maxnThreads;i++){
+    for (int i = 1; i< maxnThreads+1;i++){
         LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
         results[i-1]=mySim->simulate(u0,time,i);
         std::string inf3 = "rho_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
