@@ -297,10 +297,12 @@ int main(int argc, char* argv[]){
     for (int i = 1; i< maxnThreads+1;i++){
         LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
         results[i-1]=mySim->simulate(u0,time,i);
+        /*
         std::string inf3 = "rho_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
         std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
         mySim->exportRho(inf3);
         mySim->exportxVel(inf4);
+        */
         delete mySim;
         std::cout<<"Done with trying out threadNum= "<<i<<"\n";
     }
