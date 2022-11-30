@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cmath>
 #include <string>
+#include <omp.h>
 
 namespace LBM{
 class Cell{
@@ -115,8 +116,10 @@ class LatticeBoltzmann{
             return (index%l==(l-1));
         }
         inline void syncAll(){
+            #pragma omp parallel for
             for (int j = 0; j<lat_size;j++)
                 cellLattice[j].sync();
+            
         }
     public:
         LatticeBoltzmann(){};
@@ -125,7 +128,7 @@ class LatticeBoltzmann{
             this->w = w;
             this->tau = tau;
             this->lat_size = l*w;
-            // initialize all lattice cells to rho=1 everywhere. No flow. Parallelisable
+            // initialize all lattice cells to rho=1 everywhere. No flow. 
             Cell *initCell = new Cell(); 
             for (int i=0; i<lat_size; i++){        
                 this->cellLattice.push_back(*initCell);
@@ -147,10 +150,16 @@ class LatticeBoltzmann{
             }
         }
         */
-        void simulate(double u0, int time){
+        double simulate(double u0, int time, int nThreads){
+            omp_set_num_threads(nThreads);
             int e,w,n,s,ne,sw,nw,se;
+            double initial, final;
+
+            initial=omp_get_wtime();
+
             for (int t=0; t<time;t++){
-                for (int i=0;i<lat_size;i++){
+                #pragma omp parallel for 
+                    for (int i=0;i<lat_size;i++){
                     // collision step                 
                     this->cellLattice[i].collision(tau);
                     // advection step, with periodic looping around
@@ -175,6 +184,7 @@ class LatticeBoltzmann{
                     this->cellLattice[nw].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
                     this->cellLattice[se].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
                 }
+                
                 // sync all propagated fluxes and update all rho and velocities
                 syncAll();
                 // Apply boundary condition
@@ -210,6 +220,9 @@ class LatticeBoltzmann{
                 }
                 syncAll();  
             }
+
+            final = omp_get_wtime();
+            return final-initial;
         }
         void exportRho(std::string& fname){
             std::ofstream f (fname);
@@ -234,8 +247,7 @@ class LatticeBoltzmann{
                 f<<v<<endChar;
             }
             f.close();
-        }
-        
+        }        
 };
 
 /*
@@ -249,22 +261,49 @@ int main(int argc, char* argv[]){
     int w = 41;
     double u0=0.2;
     double alpha=0.02;
-    double tau = 3.0*alpha+0.5;  
-    int time = std::stoi(argv[1]);
-    
-    LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau);  
+    double tau = 3.0*alpha+0.5; 
+
+    if (argc!=3){
+        std::cout<<"Hey man, two 2 cml arguments only\n";
+        std::cout<<"<.exe><maxnThreads><noOfTimeSteps>\n";
+        return 0;
+    }
+
+    int maxnThreads = std::stoi(argv[1]);
+    int time = std::stoi(argv[2]);
+    double *results = new double[maxnThreads];
+     
     /*
     std::string inf1("rho_0sec_02u0.txt");
     std::string inf2("xVel_0sec_02u0.txt");
     mySim->exportRho(inf1);
     mySim->exportxVel(inf2);
     */
-    mySim->simulate(u0,time);
-    
-    std::string inf3 = "Rho_02u0_"+std::to_string(time)+"_sec.txt";
-    std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec.txt";
-    mySim->exportRho(inf3);
-    mySim->exportxVel(inf4);
+
+    for (int i = 1; i< maxnThreads;i++){
+        LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
+        results[i-1]=mySim->simulate(u0,time,i);
+        std::string inf3 = "rho_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
+        std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
+        mySim->exportRho(inf3);
+        mySim->exportxVel(inf4);
+        delete mySim;
+        std::cout<<"Done with trying out threadNum= "<<i<<"\n";
+    }
+    // save results to .txt file
+    std:: ofstream file("LBM_8500_steps_vs_nThreads.txt");
+    if (!file.is_open()){
+        printf("Error! Can't open file!\n");
+        return 0;
+    }
+    else{
+        file <<"nThreads\tTime\n";
+        for (int i=0;i<maxnThreads;i++){
+            file<<(i+1)<<"\t"<<results[i]<<"\n";
+        } 
+    }
+    file.close();
+    printf("Wrote results to file successfuly!\n");
     std::cout<<"Done!\n";
-    return 0;
+    return 1;
 }
