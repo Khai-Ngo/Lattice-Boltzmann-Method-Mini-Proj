@@ -15,26 +15,36 @@ class Cell{
         const std::array<int, 9>ey {{0,0,0,1,-1,1,-1,1,-1}};
         std::array<double, 9>f_i;
         std::array<double, 9>f_dup; // for updating. Avoid overwriting data before they get propagated
+        double rho;
+        double xVel;
+        double yVel;
+        void ruv(){
+            double vx=0;
+            double vy=0;
+            double density=0;
+            for (int i=0;i<f_i.size();i++){
+                vx+=ex[i]*f_i[i];
+                vy+=ey[i]*f_i[i];
+                density+=f_i[i]; 
+            }
+            vx /= density;
+            vy /= density;
+            this->rho = density;
+            this->xVel = vx;
+            this->yVel= vy;
+        }
     public:
         Cell(){
-             // concurrent f_i and its duplicate. Default to same values as the weights (recommended by textbooks)
-            this->f_i = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
-            this->f_dup = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
-        }
-        // if you want a different initial flow, specify it yourself
-        Cell(const std::array<double, 9>& f_i){
-            this->f_i = f_i;
-            this->f_dup = f_i;
-        }
-        Cell(double rho){
-            // init with zero velocity. Basically the weights array times a multiplier
-            this-> f_i={rho*4./9., rho*1./9, rho*1./9, rho*1./9, rho*1./9, rho*1./36, rho*1./36, rho*1./36, rho*1./36};
-            this-> f_dup={rho*4./9., rho*1./9, rho*1./9, rho*1./9, rho*1./9, rho*1./36, rho*1./36, rho*1./36, rho*1./36};
+             // concurrent f_i and its duplicate. Default to rho=1, no velocity
+            this->f_i = {1, 0, 0, 0, 0, 0, 0, 0, 0};
+            this->f_dup = {1, 0, 0, 0, 0, 0, 0, 0, 0};
+            ruv();
         }
         // copy constructor
         Cell (const Cell& inputCell){
             this->f_i = inputCell.f_i;
             this->f_dup = inputCell.f_dup;
+            ruv();
         }
         void update_fi(int dir, double input){
             this->f_dup[dir] = input;
@@ -44,76 +54,36 @@ class Cell{
         }
         void sync(){
             this->f_i = this->f_dup;
-        }
-        // return value of macro density for a cell
-        double density(){
-            double ret = 0;
-            // small loops like these are not worth parallelising
-            for (int i=0; i<f_i.size();i++){
-                ret+= f_i[i];
-            }
-            return ret;
-        }
-        // return macro speed at the cell
-        double speed(){
-            double vx=0;
-            double vy=0;
-            double rho=0;
-            for (int i=0;i<f_i.size();i++){
-                vx+=ex[i]*f_i[i];
-                vy+=ey[i]*f_i[i];
-                rho+=f_i[i]; 
-            }
-            vx /= rho;
-            vy /= rho;
-            return std::sqrt(vx*vx+vy*vy);
+            ruv();
         }
         // Avoid looping through the array many times but repeat code
         void collision(double t){
-            // don't call speed() or velocity(), because if you do you need call density() for rho, and that means looping through f_i twice
-            double vx=0;
-            double vy=0;
-            double rho=0;
-            for (int i=0;i<f_i.size();i++){
-                vx+=ex[i]*f_i[i];
-                vy+=ey[i]*f_i[i];
-                rho+=f_i[i]; 
-            }
-            vx /= rho;
-            vy /= rho;
             double dotProd, uProd, fiEQ_i;
             for (int i = 0; i<f_i.size();i++){  
-                dotProd = ex[i]*vx+ey[i]*vy;
-                uProd = vx*vx+vy*vy;
+                dotProd = ex[i]*xVel+ey[i]*yVel;
+                uProd = xVel*xVel+yVel*yVel;
                 fiEQ_i= weights[i]*rho*(1+3*dotProd+4.5*dotProd*dotProd-1.5*uProd);
                 f_i[i] -= (f_i[i]-fiEQ_i)/t;
             }
         }
+        double density(){
+            return rho;
+        }
+        double vx(){
+            return xVel;
+        }
+        double vy(){
+            return yVel;
+        }
         // for debugging purposes
         std::array<double, 9> distFuctions(){
-            return f_i;
-        }
-        // return value of macro flow velocity out of a cell
-        std::pair<double, double> velocity(){
-            double pvx=0;
-            double pvy=0;
-            double rho=0;
-            for (int i=0;i<f_i.size();i++){
-                pvx+=ex[i]*f_i[i];
-                pvy+=ey[i]*f_i[i];
-                rho+=f_i[i]; // dont call density() to avoid looping it twice
-            }
-            return std::make_pair (pvx/rho, pvy/rho); 
+            return std::move(f_i);
         }
         std::array<double, 9> equilibrium(){
             std::array<double, 9> fiEQ;
-            std::pair v = velocity();
-            double vx = std::get<0>(v);
-            double vy = std::get<1>(v);
-            double rho = density(); // oh well, for cleaniness's sake
             for (int i = 0; i<f_i.size();i++){  
-                double dotProd = ex[i]*vx+ey[i]*vy;
-                double uProd = vx*vx+vy*vy;
+                double dotProd = ex[i]*xVel+ey[i]*yVel;
+                double uProd = xVel*xVel+yVel*yVel;
                 fiEQ[i]= weights[i]*rho*(1+3*dotProd+4.5*dotProd*dotProd-1.5*uProd);
             }
             return std::move(fiEQ); //  to avoid memory run-away
@@ -144,133 +114,9 @@ class LatticeBoltzmann{
         bool isRight(int index){
             return (index%l==(l-1));
         }
-        int nodeType(int i){
-            // find out what type of node it is based on node index
-            if (isTop(i)){
-                        if (isLeft(i)){
-                            return 1; // top left node
-                        }
-                        else if (isRight(i))
-                        {
-                            return 2; // top right node
-                        }
-                        else return 3; // top row node
-                        
-                    }
-                    else if (isBottom(i))
-                    {
-                        if (isLeft(i)){
-                            return 4; // bot left node
-                        }
-                        else if (isRight(i))
-                        {
-                            return 5; // bot right node
-                        }
-                        else return 6; // bot row node
-                    }
-                    else if (isLeft(i)){
-                        return 7; // left col node
-                    }
-                    else if (isRight(i))
-                    {
-                        return 8; // right col node 
-                    }
-                    else return 9; // middle node
-                }
-        // 9 (kinda) types of nodes with different propagation rules (due to them being affected by BC in different ways)
-        void propTopLeft(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1+l].update_fi(2, cellLattice[i].get_fi(2)); // e2 W affected by periodic BC
-            this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3)); // e3 N reflect off top wall
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            this->cellLattice[i+2].update_fi(8, cellLattice[i].get_fi(5)); // e5 NE specular reflect off top wall
-            this->cellLattice[i+2*l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW affected by periodic BC
-            this->cellLattice[i+l-2].update_fi(6, cellLattice[i].get_fi(7)); // e7 NW affected by periodic BC and specular reflect off top wall
-            this->cellLattice[i+l+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE 
-        }
-        void propTopRight(int i){
-            this->cellLattice[i-l+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E affected by periodic BC
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3)); // e3 N reflect off top wall
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            this->cellLattice[i-l+2].update_fi(8, cellLattice[i].get_fi(5)); // e5 NE affected by periodic BC and specular reflect off top wall
-            this->cellLattice[i+l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW
-            this->cellLattice[i-2].update_fi(6, cellLattice[i].get_fi(7)); // e7 NW specular reflect off top wall
-            this->cellLattice[i+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE PBC
-        }
-        void propBotLeft(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W affected by periodic BC 
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4)); // e4 S reflect off bot wall
-            this->cellLattice[i-l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE
-            this->cellLattice[i+l-2].update_fi(7, cellLattice[i].get_fi(6)); // e6 SW specular refl off bot wall + PBC
-            this->cellLattice[i-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW PBC
-            this->cellLattice[i+2].update_fi(5, cellLattice[i].get_fi(8)); // e8 SE specular refl off bot wall
-        }
-        void propBotRight(int i){
-            this->cellLattice[i-l+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E PBC
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4)); // e4 S reflect rev bot wall
-            this->cellLattice[i-2*l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE PBC
-            this->cellLattice[i-2].update_fi(7, cellLattice[i].get_fi(6)); // e6 SW spec refl bot wall
-            this->cellLattice[i-l-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
-            this->cellLattice[i-l+2].update_fi(5, cellLattice[i].get_fi(8)); // e8 SE PBC + spec refl bot wall 
-        }
-        void propLeftCol(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1+l].update_fi(2, cellLattice[i].get_fi(2)); // e2 W PBC
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            this->cellLattice[i-l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE
-            this->cellLattice[i+2*l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW PBC
-            this->cellLattice[i-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW PBC
-            this->cellLattice[i+l+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE 
-        }
-        void propRightCol(int i){
-            this->cellLattice[i-l+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E PBC
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            this->cellLattice[i-2*l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE PBC
-            this->cellLattice[i+l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW
-            this->cellLattice[i-l-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
-            this->cellLattice[i+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE PBC
-        }
-        void propTopRow(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3)); // e3 N refl rev top wall
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            int j = ((i%l + 2) >= l)? i+2-l:i+2; // pesky 2-unit shift by spec refl...
-            this->cellLattice[j].update_fi(8, cellLattice[i].get_fi(5)); // e5 NE spec refl top wall
-            this->cellLattice[i+l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW 
-            int k = ((i%l - 2) < 0)? i-2+l:i-2; 
-            this->cellLattice[k].update_fi(6, cellLattice[i].get_fi(7)); // e7 NW spec refl top wall
-            this->cellLattice[i+l+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
-        }
-        void propBotRow(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4)); // e4 S rfl rev bot wall
-            this->cellLattice[i-l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE
-            int j = ((i%l-2)<0)? i-2+l:i-2;
-            this->cellLattice[j].update_fi(7, cellLattice[i].get_fi(6)); // e6 SW spec refl bot wall
-            this->cellLattice[i-l-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
-            int k = ((i%l + 2) >= l)? i+2-l:i+2;
-            this->cellLattice[k].update_fi(5, cellLattice[i].get_fi(8)); // e8 SE spec refl bot wall
-        }
-        void propMid(int i){
-            this->cellLattice[i+1].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
-            this->cellLattice[i-1].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
-            this->cellLattice[i-l].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
-            this->cellLattice[i+l].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
-            this->cellLattice[i-l+1].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE
-            this->cellLattice[i+l-1].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW
-            this->cellLattice[i-l-1].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
-            this->cellLattice[i+l+1].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
+        inline void syncAll(){
+            for (int j = 0; j<lat_size;j++)
+                cellLattice[j].sync();
         }
     public:
         LatticeBoltzmann(){};
@@ -279,13 +125,14 @@ class LatticeBoltzmann{
             this->w = w;
             this->tau = tau;
             this->lat_size = l*w;
-            // initialize all lattice cells to default distributions. Parallelisable
-            Cell *initCell = new Cell(); // does not look neat. Leave it for now
+            // initialize all lattice cells to rho=1 everywhere. No flow. Parallelisable
+            Cell *initCell = new Cell(); 
             for (int i=0; i<lat_size; i++){        
                 this->cellLattice.push_back(*initCell);
             }
             delete initCell;      
         }
+        /*
         void initctrPressurePulse(int l, int w, double tau){
             this->l = l;
             this->w = w;
@@ -299,49 +146,69 @@ class LatticeBoltzmann{
                 delete temp;
             }
         }
-        void simulate(int time){
+        */
+        void simulate(double u0, int time){
+            int e,w,n,s,ne,sw,nw,se;
             for (int t=0; t<time;t++){
                 for (int i=0;i<lat_size;i++){
-                    // collision step
+                    // collision step                 
                     this->cellLattice[i].collision(tau);
-                    // advection step
-                    switch (nodeType(i))
-                    {
-                    case 1:
-                        propTopLeft(i);
-                        break;
-                    case 2:
-                        propTopRight(i);
-                        break;
-                    case 3:
-                        propTopRow(i);
-                        break;
-                    case 4:
-                        propBotLeft(i);
-                        break;
-                    case 5:
-                        propBotRight(i);
-                        break;
-                    case 6:
-                        propBotRow(i);
-                        break;
-                    case 7:
-                        propLeftCol(i);
-                        break;
-                    case 8:
-                        propRightCol(i);
-                        break;
-                    case 9:
-                        propMid(i);
-                        break;
-                    default:
-                        std::cout<<"You should never see this line printed\n";
-                        break;
-                    } 
+                    // advection step, with periodic looping around
+                    e = (!isRight(i))? i+1 : i+1-l;
+                    w = (!isLeft(i))? i-1 : i-1+l;
+                    n = (!isTop(i))? i-l : i - l+ lat_size;
+                    s = (!isBottom(i))? i+l : i + l - lat_size;
+                    ne = (!isRight(i))? i-l+1 : i-2*l+1;
+                    if (ne<0) ne+=lat_size;
+                    sw = (!isLeft(i))? i+l-1 : i+2*l-1;
+                    if (sw>=lat_size) sw-=lat_size;
+                    nw = (!isLeft(i))? i-l-1 : i -1;
+                    if (nw <0) nw+=lat_size;
+                    se = (!isRight(i))? i+l+1 : i+1;
+                    if (se >= lat_size) se-=lat_size;
+                    this->cellLattice[e].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
+                    this->cellLattice[w].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
+                    this->cellLattice[n].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
+                    this->cellLattice[s].update_fi(4, cellLattice[i].get_fi(4)); // e4 S
+                    this->cellLattice[ne].update_fi(5, cellLattice[i].get_fi(5)); // e5 NE
+                    this->cellLattice[sw].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW
+                    this->cellLattice[nw].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
+                    this->cellLattice[se].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
                 }
-                // sync current flux with upated flux
-                for (int j = 0; j<lat_size;j++)
-                    cellLattice[j].sync();
+                // sync all propagated fluxes and update all rho and velocities
+                syncAll();
+                // Apply boundary condition
+                // east side sink
+                for (int j=l-1;j<lat_size;j+=l){
+                    // dont interpret this as propagation, more like re-assignment to fit BC
+                    this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
+                    this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
+                    this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
+                }
+                // top bounce
+                for (int i =0; i<l;i++){
+                    this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
+                    this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
+                    this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
+                }
+                // bottom bounce
+                for (int i=lat_size-l;i<lat_size;i++){
+                    this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3));
+                    this->cellLattice[i].update_fi(6, cellLattice[i].get_fi(5));
+                    this->cellLattice[i].update_fi(8, cellLattice[i].get_fi(7));
+                }
+                // inlet fixed x-velocity
+                // this step actually also initializes the west side inlet flow
+                for (int j=l;j<=lat_size-2*l;j+=l){
+                    double rho = cellLattice[j].density();
+                    double f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
+                    double f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                    double f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                    this->cellLattice[j].update_fi(1, f1update);
+                    this->cellLattice[j].update_fi(5, f5update);
+                    this->cellLattice[j].update_fi(8, f8update);
+                }
+                syncAll();  
             }
         }
         void exportRho(std::string& fname){
@@ -356,13 +223,13 @@ class LatticeBoltzmann{
             }
             f.close();
         }
-        void exportSpd(std::string& fname){
+        void exportxVel(std::string& fname){
             std::ofstream f (fname);
             if (!f){
                 std::cout<<"Can't open "<<fname<<" for writing!\n";
             }
             for (int i=0; i<lat_size;i++){
-                double v = cellLattice[i].speed();
+                double v = cellLattice[i].vx();
                 std::string endChar = (i%l==(l-1))? "\n":"\t";
                 f<<v<<endChar;
             }
@@ -378,24 +245,26 @@ std::pair<int, int> index_to_xy(int index, int l){
 */
 }
 int main(int argc, char* argv[]){
-    int l = 10;
-    int w = 10;
-    double tau = 0.5;  
-    int time = 1000;
+    int l = 1001;
+    int w = 41;
+    double u0=0.2;
+    double alpha=0.02;
+    double tau = 3.0*alpha+0.5;  
+    int time = std::stoi(argv[1]);
     
-    LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann();
-    mySim->initctrPressurePulse(l, w, tau);  
-    
-    std::string inf1("init_rho_ctrpuls.txt");
-    std::string inf2("inti_spd_ctrpuls.txt");
+    LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau);  
+    /*
+    std::string inf1("rho_0sec_02u0.txt");
+    std::string inf2("xVel_0sec_02u0.txt");
     mySim->exportRho(inf1);
-    mySim->exportSpd(inf2);
+    mySim->exportxVel(inf2);
+    */
+    mySim->simulate(u0,time);
     
-    mySim->simulate(time);
-    std::string inf3("fin_rho_ctrpuls_10x10_050tau_1ks.txt");
-    std::string inf4("fin_spd_ctrpuls_10x10_050tau_1ks.txt");
+    std::string inf3 = "Rho_02u0_"+std::to_string(time)+"_sec.txt";
+    std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec.txt";
     mySim->exportRho(inf3);
-    mySim->exportSpd(inf4);
+    mySim->exportxVel(inf4);
     std::cout<<"Done!\n";
     return 0;
 }
