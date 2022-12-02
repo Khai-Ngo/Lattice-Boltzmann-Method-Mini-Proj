@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cmath>
 #include <string>
+#include <chrono>
 
 namespace LBM{
 class Cell{
@@ -147,8 +148,9 @@ class LatticeBoltzmann{
             }
         }
         */
-        void simulate(double u0, int time){
+        double simulate(double u0, int time){
             int e,w,n,s,ne,sw,nw,se;
+            auto start = std::chrono::high_resolution_clock::now();
             for (int t=0; t<time;t++){
                 for (int i=0;i<lat_size;i++){
                     // collision step                 
@@ -210,6 +212,9 @@ class LatticeBoltzmann{
                 }
                 syncAll();  
             }
+            auto stop = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> duration = stop-start;
+            return duration.count();
         }
         void exportRho(std::string& fname){
             std::ofstream f (fname);
