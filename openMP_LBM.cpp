@@ -153,12 +153,13 @@ class LatticeBoltzmann{
         double simulate(double u0, int time, int nThreads){
             omp_set_num_threads(nThreads);
             int e,w,n,s,ne,sw,nw,se;
+            double rho, f1update, f5update, f8update;
             double initial, final;
 
             initial=omp_get_wtime();
 
             for (int t=0; t<time;t++){
-                #pragma omp parallel for 
+                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se) for 
                     for (int i=0;i<lat_size;i++){
                     // collision step                 
                     this->cellLattice[i].collision(tau);
@@ -220,12 +221,12 @@ class LatticeBoltzmann{
                     // inlet fixed x-velocity
                     // this step actually also initializes the west side inlet flow
                  
-                    #pragma omp for
+                    #pragma omp private(rho, f1update, f5update, f8update) for
                     for (int j=l;j<=lat_size-2*l;j+=l){
-                        double rho = cellLattice[j].density();
-                        double f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
-                        double f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
-                        double f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                        rho = cellLattice[j].density();
+                        f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
+                        f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                        f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
                         this->cellLattice[j].update_fi(1, f1update);
                         this->cellLattice[j].update_fi(5, f5update);
                         this->cellLattice[j].update_fi(8, f8update);
