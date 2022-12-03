@@ -76,7 +76,7 @@ class Cell{
         double vy(){
             return yVel;
         }
-        double cellReset(){
+        void cellReset(){
             this->f_i = {1, 0, 0, 0, 0, 0, 0, 0, 0};
             this->f_dup = {1, 0, 0, 0, 0, 0, 0, 0, 0};
             ruv();
