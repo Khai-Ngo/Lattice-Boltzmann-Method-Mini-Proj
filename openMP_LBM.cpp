@@ -123,11 +123,6 @@ class LatticeBoltzmann{
         inline void syncAll(){
             #pragma omp parallel for
             for (int j = 0; j<lat_size;j++){
-                // debug
-                // int threadsDrawn = omp_get_num_threads();
-                // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in syncAll \n";
-                // std::cout<<"Thread num "+std::to_string(omp_get_thread_num())+"\n";
-                // std::cin.get();
                 cellLattice[j].sync();
             } 
         }
@@ -158,11 +153,6 @@ class LatticeBoltzmann{
                 {
                 #pragma omp for
                     for (int i=0;i<lat_size;i++){
-                    // debug
-                    // int threadsDrawn = omp_get_num_threads();
-                    // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+"\n";
-                    // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
-                    // std::cin.get();
                     // collision step                 
                     this->cellLattice[i].collision(tau);
                     // advection step, with periodic looping around
@@ -189,76 +179,46 @@ class LatticeBoltzmann{
                     this->cellLattice[se].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
                     
                     }
-                }
-                
+                }  
                 // sync all propagated fluxes and update all rho and velocities
                 syncAll();
-                #pragma omp parallel sections
-                {   
-                    // Apply boundary condition
-                    // east side sink
-                    #pragma omp section
-                    {
-                        // int threadsDrawn = omp_get_num_threads();
-                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in east BC \n";
-                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
-                        // std::cin.get();
-                    for (int j=l-1;j<lat_size;j+=l){
-                        // dont interpret this as propagation, more like re-assignment to fit BC
-                        this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
-                        this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
-                        this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
-                    }
-                    }
+                // Apply boundary condition
+                #pragma omp parallel for 
+                for (int i=0; i<l;i++){
                     // top bounce
-                    #pragma omp section
-                    {
-                        // int threadsDrawn = omp_get_num_threads();
-                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in top BC \n";
-                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
-                        // std::cin.get();
-                    for (int i =0; i<l;i++){
-                        this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
-                        this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
-                        this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
-                    }
-                    }
+                    this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
+                    this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
+                    this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
+                    this->cellLattice[i].sync();
                     // bottom bounce
-                    #pragma omp section
-                    { 
-                        // int threadsDrawn = omp_get_num_threads();
-                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in bot BC \n";
-                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
-                        // std::cin.get();
-                    for (int i=lat_size-l;i<lat_size;i++){
-                        this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3));
-                        this->cellLattice[i].update_fi(6, cellLattice[i].get_fi(5));
-                        this->cellLattice[i].update_fi(8, cellLattice[i].get_fi(7));
-                    }
-                    }
-                    // inlet fixed x-velocity
-                    // this step actually also initializes the west side inlet flow
-                    #pragma omp section
-                    {
-                        // int threadsDrawn = omp_get_num_threads();
-                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in west BC \n";
-                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
-                        // std::cin.get();
-                    for (int j=l;j<=lat_size-2*l;j+=l){
-                        rho = cellLattice[j].density();
-                        f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
-                        f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
-                        f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
-                        this->cellLattice[j].update_fi(1, f1update);
-                        this->cellLattice[j].update_fi(5, f5update);
-                        this->cellLattice[j].update_fi(8, f8update);
-                    }
-                    }
-                }        
-                
-                syncAll();  
+                    this->cellLattice[i+lat_size-l].update_fi(4, cellLattice[i+lat_size-l].get_fi(3));
+                    this->cellLattice[i+lat_size-l].update_fi(6, cellLattice[i+lat_size-l].get_fi(5));
+                    this->cellLattice[i+lat_size-l].update_fi(8, cellLattice[i+lat_size-l].get_fi(7));
+                    this->cellLattice[i+lat_size-l].sync();
+                }                    
+                // inlet fixed x-velocity
+                // this step actually also initializes the west side inlet flow 
+                #pragma omp parallel private(rho, f1update, f5update, f8update) 
+                #pragma omp for 
+                for (int j=l;j<=lat_size-2*l;j+=l){
+                    // west side sink
+                    rho = cellLattice[j].density();
+                    f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
+                    f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                    f8update = cellLattice[j].get_fi(7)+0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
+                    this->cellLattice[j].update_fi(1, f1update);
+                    this->cellLattice[j].update_fi(5, f5update);
+                    this->cellLattice[j].update_fi(8, f8update);
+                    this->cellLattice[j].sync();
+                }
+                #pragma omp parallel for
+                for (int j=l-1;j<lat_size;j+=l){
+                    this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
+                    this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
+                    this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
+                    this->cellLattice[j].sync();
+                }
             }
-
             final = omp_get_wtime();
             return final-initial;
         }
@@ -293,12 +253,6 @@ class LatticeBoltzmann{
             }             
         }       
 };
-
-/*
-std::pair<int, int> index_to_xy(int index, int l){
-    return std::make_pair(index/l, index%l);
-}
-*/
 }
 int main(int argc, char* argv[]){
     
@@ -324,8 +278,8 @@ int main(int argc, char* argv[]){
         results[i-1]=mySim->simulate(u0,time,i);
         if (i == saveFlag){
         // just one set of output for a random threadNum for sanity check
-        std::string inf3 = "rho_02u0_"+std::to_string(l)+"x"+std::to_string(w)+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
-        std::string inf4 = "xVel_02u0_"+std::to_string(l)+"x"+std::to_string(w)+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
+        std::string inf3 = "rho_02u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
+        std::string inf4 = "xVel_02u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
         mySim->exportRho(inf3);
         mySim->exportxVel(inf4);
         }
