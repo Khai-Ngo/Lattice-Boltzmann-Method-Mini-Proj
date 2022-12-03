@@ -76,6 +76,11 @@ class Cell{
         double vy(){
             return yVel;
         }
+        double cellReset(){
+            this->f_i = {1, 0, 0, 0, 0, 0, 0, 0, 0};
+            this->f_dup = {1, 0, 0, 0, 0, 0, 0, 0, 0};
+            ruv();
+        }
         // for debugging purposes
         std::array<double, 9> distFuctions(){
             return std::move(f_i);
@@ -117,9 +122,14 @@ class LatticeBoltzmann{
         }
         inline void syncAll(){
             #pragma omp parallel for
-            for (int j = 0; j<lat_size;j++)
+            for (int j = 0; j<lat_size;j++){
+                // debug
+                // int threadsDrawn = omp_get_num_threads();
+                // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in syncAll \n";
+                // std::cout<<"Thread num "+std::to_string(omp_get_thread_num())+"\n";
+                // std::cin.get();
                 cellLattice[j].sync();
-            
+            } 
         }
     public:
         LatticeBoltzmann(){};
@@ -129,27 +139,12 @@ class LatticeBoltzmann{
             this->tau = tau;
             this->lat_size = l*w;
             // initialize all lattice cells to rho=1 everywhere. No flow. 
-            Cell *initCell = new Cell(); 
+            Cell *initCell = new Cell();         
             for (int i=0; i<lat_size; i++){        
                 this->cellLattice.push_back(*initCell);
             }
             delete initCell;      
         }
-        /*
-        void initctrPressurePulse(int l, int w, double tau){
-            this->l = l;
-            this->w = w;
-            this->tau = tau;
-            this->lat_size = l*w;
-            int ctr_index = xy_to_index(l/2, w/2, l);
-            for (int i=0; i<lat_size;i++){
-                double rho = static_cast<float>((i/l+1)*(l-i/l)*(i%l+1)*(w-i%l))/static_cast<float>(lat_size*lat_size/4);
-                Cell *temp = new Cell(rho);
-                this->cellLattice.push_back(*temp);
-                delete temp;
-            }
-        }
-        */
         double simulate(double u0, int time, int nThreads){
             omp_set_num_threads(nThreads);
             int e,w,n,s,ne,sw,nw,se;
@@ -159,9 +154,15 @@ class LatticeBoltzmann{
             initial=omp_get_wtime();
 
             for (int t=0; t<time;t++){
-                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se) 
-                #pragma omp for 
+                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se)
+                {
+                #pragma omp for
                     for (int i=0;i<lat_size;i++){
+                    // debug
+                    // int threadsDrawn = omp_get_num_threads();
+                    // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+"\n";
+                    // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
+                    // std::cin.get();
                     // collision step                 
                     this->cellLattice[i].collision(tau);
                     // advection step, with periodic looping around
@@ -177,6 +178,7 @@ class LatticeBoltzmann{
                     if (nw <0) nw+=lat_size;
                     se = (!isRight(i))? i+l+1 : i+1;
                     if (se >= lat_size) se-=lat_size;
+                
                     this->cellLattice[e].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
                     this->cellLattice[w].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
                     this->cellLattice[n].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
@@ -185,45 +187,63 @@ class LatticeBoltzmann{
                     this->cellLattice[sw].update_fi(6, cellLattice[i].get_fi(6)); // e6 SW
                     this->cellLattice[nw].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
                     this->cellLattice[se].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
+                    
+                    }
                 }
                 
                 // sync all propagated fluxes and update all rho and velocities
                 syncAll();
-                // Apply boundary condition
-                // east side sink
-        
-                   
-                    #pragma omp for
+                #pragma omp parallel sections
+                {   
+                    // Apply boundary condition
+                    // east side sink
+                    #pragma omp section
+                    {
+                        // int threadsDrawn = omp_get_num_threads();
+                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in east BC \n";
+                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
+                        // std::cin.get();
                     for (int j=l-1;j<lat_size;j+=l){
                         // dont interpret this as propagation, more like re-assignment to fit BC
                         this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
                         this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
                         this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
                     }
-                    
-                   
+                    }
                     // top bounce
-                    #pragma omp for
+                    #pragma omp section
+                    {
+                        // int threadsDrawn = omp_get_num_threads();
+                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in top BC \n";
+                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
+                        // std::cin.get();
                     for (int i =0; i<l;i++){
                         this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
                         this->cellLattice[i].update_fi(5, cellLattice[i].get_fi(6));
                         this->cellLattice[i].update_fi(7, cellLattice[i].get_fi(8));
                     }
-                    
+                    }
                     // bottom bounce
-                  
-                    #pragma omp for
+                    #pragma omp section
+                    { 
+                        // int threadsDrawn = omp_get_num_threads();
+                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in bot BC \n";
+                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
+                        // std::cin.get();
                     for (int i=lat_size-l;i<lat_size;i++){
                         this->cellLattice[i].update_fi(4, cellLattice[i].get_fi(3));
                         this->cellLattice[i].update_fi(6, cellLattice[i].get_fi(5));
                         this->cellLattice[i].update_fi(8, cellLattice[i].get_fi(7));
                     }
-                    
+                    }
                     // inlet fixed x-velocity
                     // this step actually also initializes the west side inlet flow
-                 
-                    #pragma omp parallel private(rho, f1update, f5update, f8update) 
-                    #pragma omp for
+                    #pragma omp section
+                    {
+                        // int threadsDrawn = omp_get_num_threads();
+                        // std::cout<<"Num thread set to "+std::to_string(threadsDrawn)+" in west BC \n";
+                        // std::cout<<"Thread num"+std::to_string(omp_get_thread_num())+"\n";
+                        // std::cin.get();
                     for (int j=l;j<=lat_size-2*l;j+=l){
                         rho = cellLattice[j].density();
                         f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
@@ -233,8 +253,9 @@ class LatticeBoltzmann{
                         this->cellLattice[j].update_fi(5, f5update);
                         this->cellLattice[j].update_fi(8, f8update);
                     }
-                    
-                //}
+                    }
+                }        
+                
                 syncAll();  
             }
 
@@ -264,7 +285,13 @@ class LatticeBoltzmann{
                 f<<v<<endChar;
             }
             f.close();
-        }        
+        }
+        void latticeReset(){
+            #pragma omp parallel for
+            for (int j = 0; j<lat_size;j++){
+                cellLattice[j].cellReset();
+            }             
+        }       
 };
 
 /*
@@ -274,44 +301,40 @@ std::pair<int, int> index_to_xy(int index, int l){
 */
 }
 int main(int argc, char* argv[]){
-    int l = 1001;
-    int w = 41;
+    
     double u0=0.2;
     double alpha=0.02;
     double tau = 3.0*alpha+0.5; 
-    int time = 8500; //std::stoi(argv[2]); we just measure the scale up of the benchmark 
 
     if (argc!=2){
-        std::cout<<"Hey man, 1 cml arguments only\n";
-        std::cout<<"<.exe><maxnThreads>\n";
+        std::cout<<"Hey man, 5 cml arguments\n";
+        std::cout<<"<.exe><maxnThreads><length><width><timeStepsNumber><saveFlag>\n";
         return 0;
     }
 
     int maxnThreads = std::stoi(argv[1]);
-    
+    int l = std::stoi(argv[2]);
+    int w = std::stoi(argv[3]);
+    int time = std::stoi(argv[4]);
+    int saveFlag = std::stoi(argv[5]);
     double *results = new double[maxnThreads];
-     
-    /*
-    std::string inf1("rho_0sec_02u0.txt");
-    std::string inf2("xVel_0sec_02u0.txt");
-    mySim->exportRho(inf1);
-    mySim->exportxVel(inf2);
-    */
+    LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
 
     for (int i = 1; i< maxnThreads+1;i++){
-        LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
         results[i-1]=mySim->simulate(u0,time,i);
-        if (i == maxnThreads){
-        std::string inf3 = "rho_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
-        std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
+        if (i == saveFlag){
+        // just one set of output for a random threadNum for sanity check
+        std::string inf3 = "rho_02u0_"+std::to_string(l)+"x"+std::to_string(w)+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
+        std::string inf4 = "xVel_02u0_"+std::to_string(l)+"x"+std::to_string(w)+std::to_string(time)+"sec_"+std::to_string(i)+"threads.txt";
         mySim->exportRho(inf3);
         mySim->exportxVel(inf4);
         }
-        delete mySim;
-        std::cout<<"u=0.2, t= 8500 steps, 1001x41 channel LBM sim took "+std::to_string(results[i-1])+" seconds. Used thredNum = "<<i<<"\n";
+        mySim->latticeReset();
+        std::cout<<"thredNum = "<<i<<". Took "+std::to_string(results[i-1])+" seconds\n";
     }
     // save results to .txt file
-    std:: ofstream file("LBM_8500_steps_vs_nThreads.txt");
+    std::string fname = "LBM_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"steps_vs_nThreads.txt";
+    std:: ofstream file(fname);
     if (!file.is_open()){
         printf("Error! Can't open file!\n");
         return 0;
