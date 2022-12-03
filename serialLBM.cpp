@@ -133,21 +133,6 @@ class LatticeBoltzmann{
             }
             delete initCell;      
         }
-        /*
-        void initctrPressurePulse(int l, int w, double tau){
-            this->l = l;
-            this->w = w;
-            this->tau = tau;
-            this->lat_size = l*w;
-            int ctr_index = xy_to_index(l/2, w/2, l);
-            for (int i=0; i<lat_size;i++){
-                double rho = static_cast<float>((i/l+1)*(l-i/l)*(i%l+1)*(w-i%l))/static_cast<float>(lat_size*lat_size/4);
-                Cell *temp = new Cell(rho);
-                this->cellLattice.push_back(*temp);
-                delete temp;
-            }
-        }
-        */
         double simulate(double u0, int time){
             int e,w,n,s,ne,sw,nw,se;
             auto start = std::chrono::high_resolution_clock::now();
@@ -239,15 +224,8 @@ class LatticeBoltzmann{
                 f<<v<<endChar;
             }
             f.close();
-        }
-        
+        }      
 };
-
-/*
-std::pair<int, int> index_to_xy(int index, int l){
-    return std::make_pair(index/l, index%l);
-}
-*/
 }
 int main(int argc, char* argv[]){
     
@@ -256,29 +234,26 @@ int main(int argc, char* argv[]){
     double tau = 3.0*alpha+0.5;  
     
 
-    if (argc!=4){
-        std::cout<<"Hey man, 3 cml arguments only\n";
-        std::cout<<"<.exe><lenght><width><noOfTimeSteps>\n";
+    if (argc!=5){
+        std::cout<<"Hey man, 4 cml arguments\n";
+        std::cout<<"<.exe><lenght><width><noOfTimeSteps><saveFlag>\n";
         return 0;
     }
     
-    int l = std::stoi(argv[1]);//1001;
-    int w = std::stoi(argv[2]); //41;
+    int l = std::stoi(argv[1]);
+    int w = std::stoi(argv[2]);
     int time = std::stoi(argv[3]);
+    int saveFlag = std::stoi(argv[4]);
     
     LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau);  
-    /*
-    std::string inf1("rho_0sec_02u0.txt");
-    std::string inf2("xVel_0sec_02u0.txt");
-    mySim->exportRho(inf1);
-    mySim->exportxVel(inf2);
-    */
-    double timing = mySim->simulate(u0,time);
     
+    double timing = mySim->simulate(u0,time);
+    if (saveFlag){
     std::string inf3 = "rho_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
     std::string inf4 = "xVel_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
     mySim->exportRho(inf3);
     mySim->exportxVel(inf4);
+    }
     std::cout<<"Done! It took "+std::to_string(timing)+" seconds\n";
     return 0;
 }
