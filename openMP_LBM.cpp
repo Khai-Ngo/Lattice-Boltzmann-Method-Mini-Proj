@@ -306,7 +306,7 @@ int main(int argc, char* argv[]){
     double alpha=0.02;
     double tau = 3.0*alpha+0.5; 
 
-    if (argc!=2){
+    if (argc!=6){
         std::cout<<"Hey man, 5 cml arguments\n";
         std::cout<<"<.exe><maxnThreads><length><width><timeStepsNumber><saveFlag>\n";
         return 0;
