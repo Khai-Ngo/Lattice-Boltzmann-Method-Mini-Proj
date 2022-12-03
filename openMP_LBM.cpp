@@ -159,7 +159,8 @@ class LatticeBoltzmann{
             initial=omp_get_wtime();
 
             for (int t=0; t<time;t++){
-                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se) for 
+                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se) 
+                #pragma omp for 
                     for (int i=0;i<lat_size;i++){
                     // collision step                 
                     this->cellLattice[i].collision(tau);
@@ -221,7 +222,8 @@ class LatticeBoltzmann{
                     // inlet fixed x-velocity
                     // this step actually also initializes the west side inlet flow
                  
-                    #pragma omp private(rho, f1update, f5update, f8update) for
+                    #pragma omp parallel private(rho, f1update, f5update, f8update) 
+                    #pragma omp for
                     for (int j=l;j<=lat_size-2*l;j+=l){
                         rho = cellLattice[j].density();
                         f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
@@ -277,15 +279,16 @@ int main(int argc, char* argv[]){
     double u0=0.2;
     double alpha=0.02;
     double tau = 3.0*alpha+0.5; 
+    int time = 8500; //std::stoi(argv[2]); we just measure the scale up of the benchmark 
 
-    if (argc!=3){
-        std::cout<<"Hey man, two 2 cml arguments only\n";
-        std::cout<<"<.exe><maxnThreads><noOfTimeSteps>\n";
+    if (argc!=2){
+        std::cout<<"Hey man, 1 cml arguments only\n";
+        std::cout<<"<.exe><maxnThreads>\n";
         return 0;
     }
 
     int maxnThreads = std::stoi(argv[1]);
-    int time = std::stoi(argv[2]);
+    
     double *results = new double[maxnThreads];
      
     /*
@@ -298,14 +301,14 @@ int main(int argc, char* argv[]){
     for (int i = 1; i< maxnThreads+1;i++){
         LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
         results[i-1]=mySim->simulate(u0,time,i);
-        /*
+        if (i == maxnThreads){
         std::string inf3 = "rho_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
         std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec_"+std::to_string(i)+"_threads.txt";
         mySim->exportRho(inf3);
         mySim->exportxVel(inf4);
-        */
+        }
         delete mySim;
-        std::cout<<"Done with trying out threadNum= "<<i<<"\n";
+        std::cout<<"u=0.2, t= 8500 steps, 1001x41 channel LBM sim took "+std::to_string(results[i-1])+" seconds. Used thredNum = "<<i<<"\n";
     }
     // save results to .txt file
     std:: ofstream file("LBM_8500_steps_vs_nThreads.txt");
