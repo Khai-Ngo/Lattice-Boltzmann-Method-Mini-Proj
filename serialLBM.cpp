@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cmath>
 #include <string>
+#include <chrono>
 
 namespace LBM{
 class Cell{
@@ -147,8 +148,9 @@ class LatticeBoltzmann{
             }
         }
         */
-        void simulate(double u0, int time){
+        double simulate(double u0, int time){
             int e,w,n,s,ne,sw,nw,se;
+            auto start = std::chrono::high_resolution_clock::now();
             for (int t=0; t<time;t++){
                 for (int i=0;i<lat_size;i++){
                     // collision step                 
@@ -210,6 +212,9 @@ class LatticeBoltzmann{
                 }
                 syncAll();  
             }
+            auto stop = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> duration = stop-start;
+            return duration.count();
         }
         void exportRho(std::string& fname){
             std::ofstream f (fname);
@@ -245,12 +250,21 @@ std::pair<int, int> index_to_xy(int index, int l){
 */
 }
 int main(int argc, char* argv[]){
-    int l = 1001;
-    int w = 41;
+    
     double u0=0.2;
     double alpha=0.02;
     double tau = 3.0*alpha+0.5;  
-    int time = std::stoi(argv[1]);
+    
+
+    if (argc!=4){
+        std::cout<<"Hey man, 3 cml arguments only\n";
+        std::cout<<"<.exe><lenght><width><noOfTimeSteps>\n";
+        return 0;
+    }
+    
+    int l = std::stoi(argv[1]);//1001;
+    int w = std::stoi(argv[2]); //41;
+    int time = std::stoi(argv[3]);
     
     LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau);  
     /*
@@ -259,12 +273,12 @@ int main(int argc, char* argv[]){
     mySim->exportRho(inf1);
     mySim->exportxVel(inf2);
     */
-    mySim->simulate(u0,time);
+    double timing = mySim->simulate(u0,time);
     
-    std::string inf3 = "Rho_02u0_"+std::to_string(time)+"_sec.txt";
-    std::string inf4 = "xVel_02u0_"+std::to_string(time)+"_sec.txt";
+    std::string inf3 = "rho_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
+    std::string inf4 = "xVel_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
     mySim->exportRho(inf3);
     mySim->exportxVel(inf4);
-    std::cout<<"Done!\n";
+    std::cout<<"Done! It took "+std::to_string(timing)+" seconds\n";
     return 0;
 }
