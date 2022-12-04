@@ -272,6 +272,7 @@ int main(int argc, char* argv[]){
     int time = std::stoi(argv[4]);
     int saveFlag = std::stoi(argv[5]);
     double *results = new double[maxnThreads];
+    std::cout<<std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec\n";
     LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau); 
 
     for (int i = 1; i< maxnThreads+1;i++){
