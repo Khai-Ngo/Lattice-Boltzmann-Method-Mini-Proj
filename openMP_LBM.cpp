@@ -120,12 +120,6 @@ class LatticeBoltzmann{
         bool isRight(int index){
             return (index%l==(l-1));
         }
-        inline void syncAll(){
-            #pragma omp parallel for
-            for (int j = 0; j<lat_size;j++){
-                cellLattice[j].sync();
-            } 
-        }
     public:
         LatticeBoltzmann(){};
         LatticeBoltzmann(int l, int w, double tau){
@@ -149,13 +143,13 @@ class LatticeBoltzmann{
             initial=omp_get_wtime();
 
             for (int t=0; t<time;t++){
-                #pragma omp parallel private(e,w,n,s,ne,sw,nw,se)
+                #pragma omp parallel 
                 {
-                #pragma omp for
+                #pragma omp for private(e,w,n,s,ne,sw,nw,se)
                     for (int i=0;i<lat_size;i++){
                     // collision step                 
                     this->cellLattice[i].collision(tau);
-                    // advection step, with periodic looping around
+                    // advection step, with periodic looping
                     e = (!isRight(i))? i+1 : i+1-l;
                     w = (!isLeft(i))? i-1 : i-1+l;
                     n = (!isTop(i))? i-l : i - l+ lat_size;
@@ -178,14 +172,14 @@ class LatticeBoltzmann{
                     this->cellLattice[nw].update_fi(7, cellLattice[i].get_fi(7)); // e7 NW
                     this->cellLattice[se].update_fi(8, cellLattice[i].get_fi(8)); // e8 SE
                     
-                    }
-                }  
+                    } 
                 // sync all propagated fluxes and update all rho and velocities
-                syncAll();
+                #pragma omp for
+                    for (int j = 0; j<lat_size;j++){
+                        cellLattice[j].sync();
+                    } 
                 // Apply boundary condition
-                #pragma omp parallel private(rho, f1update, f5update, f8update)
-                { 
-                #pragma omp for 
+                #pragma omp for
                 for (int i=0; i<l;i++){
                     // top bounce
                     this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
@@ -200,9 +194,9 @@ class LatticeBoltzmann{
                 }                    
                 // inlet fixed x-velocity
                 // this step actually also initializes the west side inlet flow 
-                #pragma omp for 
+                #pragma omp for private(rho, f1update, f5update, f8update)
                 for (int j=l;j<=lat_size-2*l;j+=l){
-                    // west side sink
+                    // west side source
                     rho = cellLattice[j].density();
                     f1update= cellLattice[j].get_fi(2)+2*rho*u0/3.0;
                     f5update= cellLattice[j].get_fi(6)-0.5*(cellLattice[j].get_fi(3)-cellLattice[j].get_fi(4))+rho*u0/6.0;
@@ -214,16 +208,17 @@ class LatticeBoltzmann{
                 }
                 #pragma omp for
                 for (int j=l-1;j<lat_size;j+=l){
+                    // east side sink
                     this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
                     this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
                     this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
                     this->cellLattice[j].sync();
                 }
+                } 
                 }
-            }
             final = omp_get_wtime();
             return final-initial;
-        }
+            }
         void exportRho(std::string& fname){
             std::ofstream f (fname);
             if (!f){
