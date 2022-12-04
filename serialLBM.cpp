@@ -244,13 +244,13 @@ int main(int argc, char* argv[]){
     int w = std::stoi(argv[2]);
     int time = std::stoi(argv[3]);
     int saveFlag = std::stoi(argv[4]);
-    
+    std::cout<<std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec\n";
     LBM::LatticeBoltzmann *mySim = new LBM::LatticeBoltzmann(l, w, tau);  
     
     double timing = mySim->simulate(u0,time);
     if (saveFlag){
-    std::string inf3 = "rho_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
-    std::string inf4 = "xVel_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec.txt";
+    std::string inf3 = "rho_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec_serial.txt";
+    std::string inf4 = "xVel_0.2u0_"+std::to_string(l)+"x"+std::to_string(w)+"_"+std::to_string(time)+"_sec_serial.txt";
     mySim->exportRho(inf3);
     mySim->exportxVel(inf4);
     }
