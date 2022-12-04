@@ -183,7 +183,9 @@ class LatticeBoltzmann{
                 // sync all propagated fluxes and update all rho and velocities
                 syncAll();
                 // Apply boundary condition
-                #pragma omp parallel for 
+                #pragma omp parallel private(rho, f1update, f5update, f8update)
+                { 
+                #pragma omp for 
                 for (int i=0; i<l;i++){
                     // top bounce
                     this->cellLattice[i].update_fi(3, cellLattice[i].get_fi(4));
@@ -198,7 +200,6 @@ class LatticeBoltzmann{
                 }                    
                 // inlet fixed x-velocity
                 // this step actually also initializes the west side inlet flow 
-                #pragma omp parallel private(rho, f1update, f5update, f8update) 
                 #pragma omp for 
                 for (int j=l;j<=lat_size-2*l;j+=l){
                     // west side sink
@@ -211,12 +212,13 @@ class LatticeBoltzmann{
                     this->cellLattice[j].update_fi(8, f8update);
                     this->cellLattice[j].sync();
                 }
-                #pragma omp parallel for
+                #pragma omp for
                 for (int j=l-1;j<lat_size;j+=l){
                     this->cellLattice[j].update_fi(2, cellLattice[j-1].get_fi(2));
                     this->cellLattice[j].update_fi(7, cellLattice[j-1].get_fi(7));
                     this->cellLattice[j].update_fi(6, cellLattice[j-1].get_fi(6));
                     this->cellLattice[j].sync();
+                }
                 }
             }
             final = omp_get_wtime();
