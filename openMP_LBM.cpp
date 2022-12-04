@@ -3,7 +3,6 @@
 #include <iostream>
 #include <utility>
 #include <fstream>
-#include <cmath>
 #include <string>
 #include <omp.h>
 
