@@ -15,4 +15,4 @@
 cd $SLURM_SUBMIT_DIR
 
 # Run the program
-./ompLBM.exe 28 $SLURM_ARRAY_TASK_ID 40 8500 10
+./ompLBM_icc.exe 28 $SLURM_ARRAY_TASK_ID 40 8500 10
