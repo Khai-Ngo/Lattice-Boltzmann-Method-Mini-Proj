@@ -161,7 +161,7 @@ class LatticeBoltzmann{
                     if (nw <0) nw+=lat_size;
                     se = (!isRight(i))? i+l+1 : i+1;
                     if (se >= lat_size) se-=lat_size;
-                
+                    this->cellLattice[i].update_fi(0, cellLattice[i].get_fi(0)); // e0 loaded onto f_dup
                     this->cellLattice[e].update_fi(1, cellLattice[i].get_fi(1)); // e1 E
                     this->cellLattice[w].update_fi(2, cellLattice[i].get_fi(2)); // e2 W 
                     this->cellLattice[n].update_fi(3, cellLattice[i].get_fi(3)); // e3 N
