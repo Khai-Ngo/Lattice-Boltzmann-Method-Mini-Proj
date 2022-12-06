@@ -8,47 +8,7 @@
 // python shall do the magic of transposing the matrix and plot it as flow from left to right again 
 // also obvious that it's based on heat equation code 
 
-/*void initLattice(int lat_size, float *f){
-    // initialize the lattice in master task. Note f[1] is not touched since there's no need for it. 
-    // master shall later received results from each worker and paste it into this initialized lattice
-    for (int i = 0; i <lat_size ;i++){
-            *(f+i*9) = 1; 
-            for (int k =1 ; k< 9; k++){
-                *(f+i*9+k) = 0;
-            } 
-    }       
-}*/
-void updateRUV(int lat_size, int* ex, int* ey, float *rho, float *xVel, float *yVel, float *f){
-    // probably to be run in the master task only
-    float vx, vy, density;
-    for (int i = 0; i < lat_size; i++)
-    {
-        vx = 0;
-        vy = 0;
-        density =0; 
-        for (int k =0; k<9; k++){
-            vx+= ex[k]*(*(f+i*9+k));
-            vy+= ey[k]*(*(f+i*9+k));
-            density+= (*(f+i*9+k));
-        }
-        vx /= density;
-        vy /= density;
-        *(rho+i) = density;
-        *(xVel+i) = vx;
-        *(yVel+i) = vy;
-    }
-}
-// void collision(int* ex, int* ey, float* weights,float rho, float xVel, float yVel, float *f, float tau){
-//     // not suppose to update rho, xVel, and yVel so pass them by value
-//     // update *f so pass by reference
-//     double dotProd, uProd, fiEQ_i;
-//     for (int i = 0; i<9;i++){
-//         dotProd = ex[i]*xVel+ey[i]*yVel;
-//         uProd = xVel*xVel+yVel*yVel;
-//         fiEQ_i= weights[i]*rho*(1+3*dotProd+4.5*dotProd*dotProd-1.5*uProd);
-//         *(f+i) -= (*(f+i)-fiEQ_i)/tau;
-//     }
-// }
+
 void exportMap(char* fname, int l, int w, float* map){
     // visualizer programm shall need to transpose this
     int lat_size = l*w;
@@ -86,6 +46,8 @@ int main(int argc, char* argv[]){
     const float u0=0.2;
     const float alpha=0.02;
     const float tau = 3.0*alpha+0.5; 
+    // temp vars
+    float vx, vy, density;
     
     // the weights and ei vectors in D2Q9 scheme
     float weights[9] = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
@@ -131,9 +93,21 @@ int main(int argc, char* argv[]){
             }
         }
     }
-    updateRUV(lat_size, ex, ey, &rho[0], &xVel[0], &yVel[0], &f[0][0][0]);
-    //exportMap("init_rho_new.txt", l, w, &rho[0]); //sanity check
-    //exportMap("init_xVel_new.txt", l, w, &xVel[0]);  //sanity check
+    for (int i = 0; i < lat_size; i++){
+        vx = 0;
+        vy = 0;
+        density = 0;
+        for (int j = 0; j < 9; j++){
+            vx+=ex[j]*f[0][i][j];
+            vy += ey[j]*f[0][i][j];
+            density += f[0][i][j];
+        }
+        rho[i] = density;
+        xVel[i] = vx/density;
+        yVel[i] = vy/density;
+    }
+    exportMap("init_rho_new.txt", l, w, &rho[0]); //sanity check
+    exportMap("init_xVel_new.txt", l, w, &xVel[0]);  //sanity check
     
     // start timing from when you start sending work (all the f_i of every lattice point, and the array partitions)
     // cheat a bit by not including lattice initialization
@@ -160,6 +134,7 @@ int main(int argc, char* argv[]){
         MPI_Send(&chunks, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&left, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&right, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
+        MPI_Send(&numworkers, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&f[0][offset][0], chunks*9, MPI_FLOAT, dest, BEGIN,MPI_COMM_WORLD);
         MPI_Send(&rho[offset], chunks, MPI_FLOAT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&xVel[offset], chunks, MPI_FLOAT, dest, BEGIN, MPI_COMM_WORLD);
@@ -216,6 +191,7 @@ int main(int argc, char* argv[]){
         MPI_Recv(&chunks, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&left, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&right, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&numworkers, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&f[0][offset][0], chunks*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&rho[offset], chunks, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&xVel[offset], chunks, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
@@ -264,37 +240,33 @@ int main(int argc, char* argv[]){
             f[1-z][se][8] = f[z][i][8]; // e8 SE
             // printf("Task %d is running this loop at point %d\n",taskid, i);
             }
-            printf("in before row sending from tsk %d\n", taskid);
+            //printf("left = %d right = %d, numworkers = %d\n", left, right, numworkers);
             // communicate with neighbors
+
             // send row before 1st row of this block (that this block propagated into) to above, or last row to the last block if left == numworkers
             if (left == numworkers){
-                MPI_Send(&f[z][lat_size-w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
+                //printf("Sending from address %d",lat_size-w);
+                MPI_Send(&f[1-z][lat_size-w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
             }
             else{
-                MPI_Send(&f[z][start - w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
+                //printf("Sending from address %d",start-w);
+                MPI_Send(&f[1-z][start - w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
             }
-            // receive data propagated from above down here, or from the last box onto the first row
-            src = left;
-            msgtype = LTAG;
-            MPI_Recv(&f[z][start][0],w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
-            // then update e4, e6, e8 after reception
-            for (int i= start; i<w;i++){
-                f[1-z][i][4] = f[z][i][4];
-                f[1-z][i][6] = f[z][i][6];
-                f[1-z][i][8] = f[z][i][8];
-            }
-        
+
             // send row after last row of this block (that this block propagated into) to below, or first row to the first block if right == 1
             if (right == 1){
-                MPI_Send(&f[z][0][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
+                MPI_Send(&f[1-z][0][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
 
             }
             else{
-                MPI_Send(&f[z][end][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
+                //printf("Sending from address %d",end);
+                MPI_Send(&f[1-z][end][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
             }
+            
             // receive data propagated from below up here, or from the first box onto the last row
             src=right;
             msgtype=RTAG;
+            //printf("Receiving and saving to address %d", end-w);
             MPI_Recv(&f[z][end-w][0], w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
             // then update e3, e5, e7
             for (int i=end-w; i<end;i++){
@@ -302,7 +274,19 @@ int main(int argc, char* argv[]){
                 f[1-z][i][5] = f[z][i][5];
                 f[1-z][i][7] = f[z][i][7];
             }
-            printf("In before BC from task %d", taskid);
+
+            // receive data propagated from above down here, or from the last box onto the first row
+            src = left;
+            msgtype = LTAG;
+            //printf("Receiving and saving to address %d", start);
+            MPI_Recv(&f[z][start][0],w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+            // then update e4, e6, e8 after reception
+            for (int i= start; i<w;i++){
+                f[1-z][i][4] = f[z][i][4];
+                f[1-z][i][6] = f[z][i][6];
+                f[1-z][i][8] = f[z][i][8];
+            }
+            
             // apply boundary condition
             // left and right sidewalls
             for (int i = start; i<end-w;i+=w){
@@ -326,8 +310,14 @@ int main(int argc, char* argv[]){
             // North src BC. This will be the bottle neck since only task 1 does it. Requires better load balancing.
             if (start == 0){
                 float f4update, f6update, f8update;
-                updateRUV(w-2, ex, ey, &rho[start], &xVel[start], &yVel[start], &f[1-z][1][0]);
-                for (int i = 1; i<w-1;i++){
+                //updateRUV(1, w-1, ex, ey, rho, xVel, yVel, &f[1-z]);
+                for (int i = 1; i < w-1; i++){
+                    density = 0;
+                    for (int j = 0; j < 9; j++){
+                        density += f[1-z][i][j];
+                    }
+                    rho[i] = density;
+                    printf("density = %f", density);
                     f4update = f[1-z][i][2]-2.0*rho[i]*u0/3.0;
                     f6update = f[1-z][i][5] + 0.5*(f[1-z][i][1]-f[1-z][i][2])-rho[i]*u0/6.0;
                     f8update = f[1-z][i][7] - 0.5*(f[1-z][i][1]-f[1-z][i][2])-rho[i]*u0/6.0;
@@ -336,8 +326,20 @@ int main(int argc, char* argv[]){
                     f[1-z][i][8] = f8update;
                 }
             }
-            updateRUV(chunks, ex, ey, &rho[start], &xVel[start], &yVel[start], &f[1-z][start][0]);
-            z = 1-z; // the other set is the dummy update set
+            for (int i = start; i < end; i++){
+                    vx = 0;
+                    vy = 0;
+                    density = 0;
+                    for (int j = 0; j < 9; j++){
+                        vx+=ex[j]*f[1-z][i][j];
+                        vy += ey[j]*f[1-z][i][j];
+                        density += f[1-z][i][j];
+                    }
+                    rho[i] = density;
+                    xVel[i] = vx/density;
+                    yVel[i] = vy/density;
+                }
+            z = 1-z; // curent set is the new set
         }
         // finally send work back to master
         MPI_Send(&offset, 1, MPI_INT, MASTER, DONE, MPI_COMM_WORLD);
