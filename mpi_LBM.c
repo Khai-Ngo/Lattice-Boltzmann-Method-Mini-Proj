@@ -38,6 +38,17 @@ void updateRUV(int lat_size, int* ex, int* ey, float *rho, float *xVel, float *y
         *(yVel+i) = vy;
     }
 }
+void collision(int* ex, int* ey, float* weights,float rho, float xVel, float yVel, float *f, float tau){
+    // not suppose to update rho, xVel, and yVel so pass them by value
+    // update *f so pass by reference
+    double dotProd, uProd, fiEQ_i;
+    for (int i = 0; i<9;i++){
+        dotProd = ex[i]*xVel+ey[i]*yVel;
+        uProd = xVel*xVel+yVel*yVel;
+        fiEQ_i= weights[i]*rho*(1+3*dotProd+4.5*dotProd*dotProd-1.5*uProd);
+        *(f+i) -= (*(f+i)-fiEQ_i)/tau;
+    }
+}
 void exportMap(char* fname, int l, int w, float* map){
     // visualizer programm shall need to transpose this
     int lat_size = l*w;
@@ -64,7 +75,6 @@ int main(int argc, char* argv[]){
     MPI_Status status;
 
     const unsigned MASTER=0;
-    const unsigned NONE=0; // no neighbour 
     const unsigned MAXWORKER=27; // work divided at most 27 BC4 cores. Leave 1 core to be the boss
     const unsigned MINWORKER=2; // work divided at least between 2 cores. Third core being the boss.
     const unsigned BEGIN=1; // msg tag
@@ -76,9 +86,10 @@ int main(int argc, char* argv[]){
     const float u0=0.2;
     const float alpha=0.02;
     const float tau = 3.0*alpha+0.5; 
+    
     // the weights and ei vectors in D2Q9 scheme
-    const float weights[9] = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
-    unsigned ex[9] = {0,1,-1,0,0,1,-1,-1,1}; // hope to god is not overwritten LOL
+    float weights[9] = {4./9., 1./9, 1./9, 1./9, 1./9, 1./36, 1./36, 1./36, 1./36};
+    unsigned ex[9] = {0,1,-1,0,0,1,-1,-1,1}; // hope to god is not overwritten since if passed to function you can't have const unsigned
     unsigned ey[9] = {0,0,0,1,-1,1,-1,1,-1};
 
     // find out how many tasks are running, and your current taskid
@@ -86,6 +97,14 @@ int main(int argc, char* argv[]){
     MPI_Comm_size(MPI_COMM_WORLD,&numtasks);
     MPI_Comm_rank(MPI_COMM_WORLD,&taskid);
     numworkers = numtasks-1;
+    // brave, but at least known to all tasks from the start
+    const int l = atoi(argv[1]);
+    const int w = atoi(argv[2]);
+    const int lat_size = l*w;
+    const int time = atoi(argv[3]);
+    const int saveFlag = atoi(argv[4]);
+    float f[2][lat_size][9], rho[lat_size], xVel[lat_size], yVel[lat_size];
+
     // MASTER TASK DO THE BELOW ONLY:
     if (taskid == MASTER){
         /* only master checks for cml argument*/
@@ -101,24 +120,18 @@ int main(int argc, char* argv[]){
         MPI_Abort(MPI_COMM_WORLD, errCode);
         exit(1);
     }
-    // boss defines the grid and stuff
-    const int l = atoi(argv[1]);
-    const int w = atoi(argv[2]);
-    const int lat_size = l*w;
-    const int time = atoi(argv[3]);
-    const int saveFlag = atoi(argv[4]);
-    float f[lat_size][9], rho[lat_size], xVel[lat_size], yVel[lat_size];
-    // and only the boss prints stuff
-    printf("%dx%d_%d_sec\n", l, w, time);
-    initLattice(lat_size, &f[0][0]); // note f stores the address of f[0][0][0] (i.e. f_0 at (0, 0) of the current lattice. f[1][0][0] is f_0 at (0,0) for the duplicate lattice)
-    updateRUV(lat_size, ex, ey, &rho[0], &xVel[0], &yVel[0], &f[0][0]);
+    // only master prints stuff and initialize lattice
+    printf("LBM of a %dx%d channel flow for %d_sec, west side inlet u0 = 0.2. %d worker tasks\n", l, w, time, numworkers);
+    initLattice(lat_size, &f[0][0][0]); // note f stores the address of f[0][0][0] (i.e. f_0 at (0, 0) of the current lattice. f[1][0][0] is f_0 at (0,0) for the duplicate lattice)
+    updateRUV(lat_size, ex, ey, &rho[0], &xVel[0], &yVel[0], &f[0][0][0]);
     //exportMap("init_rho.txt", l, w, &rho[0]); //sanity check
     //exportMap("init_xVel.txt", l, w, &xVel[0]);  //sanity check
     
     // start timing from when you start sending work (all the f_i of every lattice point, and the array partitions)
+    // cheat a bit by not including lattice initialization
     int startTime, finalTime;
     startTime = MPI_Wtime();
-    // Distribute work
+    // Now you distribute work
     averow = l/numworkers; // number of row per worker
     extra = l%numworkers; // extra rows. A number between 0 and numworkers-1
     offset=0; 
@@ -128,21 +141,24 @@ int main(int argc, char* argv[]){
         rows=(i<=extra)? averow+1:averow; 
         // Tell workers who their neighbours are
         if (i==1)
-            left = NONE;
+            left = numworkers; // left flow loops all the way to the back 
         else 
             left = i-1;
         if (i == numworkers)
-            right = NONE;
+            right = 1; // right flow loops all the way to the front
         else right = i+1;
         // Send startup info to each worker
         MPI_Send(&offset, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&rows, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&left, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
         MPI_Send(&right, 1, MPI_INT, dest, BEGIN, MPI_COMM_WORLD);
-        MPI_Send(&f[offset][0], rows*w, MPI_FLOAT, dest, BEGIN,MPI_COMM_WORLD);
+        MPI_Send(&f[0][offset][0], rows*w*9, MPI_FLOAT, dest, BEGIN,MPI_COMM_WORLD);
+        MPI_Send(&rho[offset], rows*w, MPI_FLOAT, dest, BEGIN, MPI_COMM_WORLD);
+        MPI_Send(&xVel[offset], rows*w, MPI_FLOAT, dest, BEGIN, MPI_COMM_WORLD);
+        MPI_Send(&yVel[offset], rows*w, MPI_FLOAT, dest, BEGIN, MPI_COMM_WORLD);
         printf("Sent to task %d: rows= %d offset= %d ",dest,rows,offset);
         printf("left= %d right= %d\n",left,right);
-        offset = offset + rows*w;
+        offset += rows*w;
     }
     // now wait for work done by loyal workers
     for (unsigned i = 1; i< numworkers+1;i++){
@@ -150,24 +166,63 @@ int main(int argc, char* argv[]){
         msgtype = DONE;
         MPI_Recv(&offset, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
         MPI_Recv(&rows, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
-        MPI_Recv(&f[offset][0], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&f[0][offset][0], rows*w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&rho[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&xVel[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&yVel[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
     }
     // stop timing when workers have received, done its share of work, and sent back all f_i data to master
     finalTime = MPI_Wtime() - startTime;
 
     // Write exports of rho and xVel map for visualization (courtesy of Python)
-    updateRUV(lat_size, ex, ey, &rho[0], &xVel[0], &yVel[0], &f[0][0]); // I don't include this in code timing because I didn't either for OpenMP code. Problem is consider solved when all f_i are solved after t timesteps.
     printf("Received all data from workers. Now exporting...\n");
     char buffer[1024]; // export filename buffer
     snprintf(buffer, 1024, "rho_02u0_%dx%d_%dsec_%dprocs.txt", l,w,time,numworkers);
     exportMap(buffer, l, w, &rho[0]);
     snprintf(buffer, 1024, "xVel_02u0_%dx%d_%dsec_%dprocs.txt", l,w,time,numworkers);
     exportMap(buffer,l,w,&xVel[0]);
+    MPI_Finalize();
+    // end of master code
     }
     // WORKERS DO THE BELOW
     if (taskid!=MASTER){
         // worker creates the same grid lattice, but they only work on their given portion
-          
+       // i guess just initialize everything to zero first?
+       for (int k = 0; k<2;k++)
+        for (int i = 0; i<lat_size;i++)
+            for (int j=0;j<9;j++)
+                f[k][i][j]=0;
+            
+        // receive work partition from master
+        src = MASTER;
+        msgtype = BEGIN;
+        MPI_Recv(&offset, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&rows, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&left, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&right, 1, MPI_INT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&f[0][offset][0], rows*w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&rho[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&xVel[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        MPI_Recv(&yVel[offset], rows*w, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+        start = offset;
+        end = offset+rows*w-1;
+        for (int t=0;t<time;t++){
+            for (int i=0; i<l;i++){
+            // collision
+            collision(ex, ey, weights,rho[i], xVel[i], yVel[i], &f[0][i][0], tau);
+            // communicate with neighbors first
+            
+            // propagation
+            }
+        }
+        // finally send work back to master
+        MPI_Send(&offset, 1, MPI_INT, MASTER, DONE, MPI_COMM_WORLD);
+        MPI_Send(&rows, 1, MPI_INT, MASTER, DONE, MPI_COMM_WORLD);
+        MPI_Send(&f[0][offset][0], rows*w*9, MPI_FLOAT, MASTER, DONE,MPI_COMM_WORLD);
+        MPI_Send(&rho[offset], rows*w, MPI_FLOAT, MASTER, DONE, MPI_COMM_WORLD);
+        MPI_Send(&xVel[offset], rows*w, MPI_FLOAT, MASTER, DONE, MPI_COMM_WORLD);
+        MPI_Send(&yVel[offset], rows*w, MPI_FLOAT, MASTER, DONE, MPI_COMM_WORLD);
+        MPI_Finalize();
     }
     return 1;
 }
