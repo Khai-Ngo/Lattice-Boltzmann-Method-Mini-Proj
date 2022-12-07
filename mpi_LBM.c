@@ -268,6 +268,7 @@ int main(int argc, char* argv[]){
             src = left;
             msgtype = LTAG;
             MPI_Recv(&f[z][start][0],w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
+            // then update e4, e6, e8
             for (int i= start; i<start+w;i++){
                 f[1-z][i][4] = f[z][i][4];
                 f[1-z][i][6] = f[z][i][6];
