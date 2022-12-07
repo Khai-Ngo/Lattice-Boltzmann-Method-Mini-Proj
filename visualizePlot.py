@@ -41,5 +41,10 @@ def plotxVelbySect(u):
 if __name__ == '__main__':
     fname = sys.argv[1]
     u = np.genfromtxt(fname, delimiter='\t')
+    nrow = u.shape[0]
+    ncol= u.shape[1]
+    if (nrow > ncol):
+        u = np.transpose(u)
+        u = -u
     plotImage(u)
     plotxVelbySect(u)
