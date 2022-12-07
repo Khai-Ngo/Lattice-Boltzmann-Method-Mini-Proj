@@ -106,8 +106,6 @@ int main(int argc, char* argv[]){
         xVel[i] = vx/density;
         yVel[i] = vy/density;
     }
-    //exportMap("init_rho_new.txt", l, w, &rho[0]); //sanity check
-    //exportMap("init_xVel_new.txt", l, w, &xVel[0]);  //sanity check
     
     // start timing from when you start sending work (all the f_i of every lattice point, and the array partitions)
     // cheat a bit by not including lattice initialization
@@ -158,7 +156,7 @@ int main(int argc, char* argv[]){
     finalTime = MPI_Wtime() - startTime;
 
     // Write exports of rho and xVel map for visualization (courtesy of Python)
-    printf("That took %f seconds", finalTime);
+    printf("That took %f seconds\n", finalTime);
     printf("Received all data from workers. Now exporting...\n");
     if (saveFlag){
         char buffer[1024]; // export filename buffer
@@ -204,22 +202,15 @@ int main(int argc, char* argv[]){
         int rowno, colno,e,west,n,s,ne,sw,nw,se;
         float dotProd, uProd, fiEQ_i;
         int z = 0; 
-        //printf("Before simulation start. Task = %d\n",taskid); //sanity check
         for (int t=0;t<time;t++){
             for (int i=start; i<end;i++){
             // collision
-            //printf("before collision\n"); // sanity check
-            //printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check
-            //printf("current values of rho = %f, xVel = %f, yVel = %f\n", rho[i], xVel[i], yVel[i]); // sanity check
             for (int j = 0;j<9;j++){
                 dotProd = ex[j]*xVel[i]+ey[j]*yVel[i];
                 uProd = xVel[i]*xVel[i] + yVel[i]*yVel[i];
                 fiEQ_i = weights[j]*rho[i]*(1+3*dotProd+4.5*dotProd*dotProd-1.5*uProd);
-                //printf("fiEQ_%d=%f\t", j, fiEQ_i); // sanity check
                 f[z][i][j] -= (f[z][i][j]-fiEQ_i)/tau;
             }
-            //printf("\nafter collision\n"); // sanity check
-            //printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z,i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check
             /* Start of propagation phase */
             rowno = i/w;
             colno = i%w;
@@ -244,96 +235,48 @@ int main(int argc, char* argv[]){
             f[1-z][sw][6] = f[z][i][6]; // e6 SW
             f[1-z][nw][7] = f[z][i][7]; // e7 NW
             f[1-z][se][8] = f[z][i][8]; // e8 SE
-            //printf("%d position e = %d w = %d n=%d s=%d ne=%d sw=%d nw=%d se=%d\n", i, e,west,n,s,ne,sw,nw,se); // sanity check
             }
             // communicate with neighboring blocks
             // send row before 1st row of this block (that this block propagated into) to above, or last row to the last block if left == numworkers
             if (left == numworkers){
-                // printf("Top block sends this row above:\n"); // sanity check
-                // for (int i = lat_size-w; i < lat_size;i++) // sanity check
-                //     printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
                 MPI_Send(&f[1-z][lat_size-w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
             }
             else{
-                // printf("Block %d sends this row above\n", taskid); // sanity check
-                // for (int i = start-w; i < start;i++) // sanity check
-                //     printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
                 MPI_Send(&f[1-z][start - w][0], w*9, MPI_FLOAT, left, RTAG, MPI_COMM_WORLD);
             }
 
             // send row after last row of this block (that this block propagated into) to below, or first row to the first block if right == 1
             if (right == 1){
-                // printf("Bottom block sends this row below\n"); // sanity check
-                // for (int i = 0; i < w;i++) // sanity check
-                //     printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
                 MPI_Send(&f[1-z][0][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
 
             }
             else{
-                // printf("Block %d sends this row below\n", taskid); // sanity check
-                // for (int i = end; i < end+w;i++) // sanity check
-                //     printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
                 MPI_Send(&f[1-z][end][0], w*9, MPI_FLOAT, right, LTAG, MPI_COMM_WORLD);
             }
             
             // receive data propagated from below up here, or from the first box onto the last row
             src=right;
             msgtype=RTAG;
-            // printf("Task %d, Before RTAG reception:\n", taskid); // sanity check
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check  
             MPI_Recv(&f[z][end-w][0], w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
-            // printf("Task %d, After RTAG reception:\n", taskid); // sanity check
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check  
             // then update e3, e5, e7
             for (int i=end-w; i<end;i++){
                 f[1-z][i][3] = f[z][i][3];
                 f[1-z][i][5] = f[z][i][5];
                 f[1-z][i][7] = f[z][i][7];
             }
-            // printf("Task %d, After update:\n", taskid); // sanity check
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = end -w; i < end;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check  
-            
-
             // receive data propagated from above down here, or from the last box onto the first row
             src = left;
             msgtype = LTAG;
-            // printf("Task %d, Before LTAG reception:\n", taskid); // sanity check
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check  
             MPI_Recv(&f[z][start][0],w*9, MPI_FLOAT, src, msgtype, MPI_COMM_WORLD, &status);
-            // printf("Task %d, After LTAG reception:\n", taskid); // sanity check
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check  
-            // then update e4, e6, e8 after reception
             for (int i= start; i<start+w;i++){
                 f[1-z][i][4] = f[z][i][4];
                 f[1-z][i][6] = f[z][i][6];
                 f[1-z][i][8] = f[z][i][8];
             }
-            // printf("Task %d, After update reception:\n", taskid); // sanity check
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check  
-            // for (int i = start; i < start+w;i++) // sanity check
-            //         printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",z, i,f[z][i][0],f[z][i][1],f[z][i][2],f[z][i][3],f[z][i][4],f[z][i][5],f[z][i][6],f[z][i][7],f[z][i][8]); // sanity check   
             /* End of propagation phase */
-            
             // Apply boundary conditions
             // left and right sidewalls
             for (int i = start; i<end;i+=w){
-                //printf("Task %d processing point %d and point %d: LR bounce\n", taskid, i, i+w-1); // sanity check
                 // left bounce 5->6, 1->2, 8->7 
                 f[1-z][i][6] = f[1-z][i][5];
                 f[1-z][i][2] = f[1-z][i][1];
@@ -346,24 +289,18 @@ int main(int argc, char* argv[]){
             // North src BC. This will be the bottle neck since only task 1 does it. Requires better load balancing.
             if (start == 0){
                 for (int i = 1; i < w-1; i++){
-                    //printf("Task %d processing point %d: top src\n", taskid, i); // sanity check
                     density = 0;
                     for (int j = 0; j < 9; j++){
                         density += f[1-z][i][j];
                     }
-                    // printf("before doing north src BC, t = %d\n", t); // sanity check
-                    // printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
-                    f[1-z][i][4] = f[1-z][i][2]+2*density*u0/3.0;
+                     f[1-z][i][4] = f[1-z][i][2]+2*density*u0/3.0;
                     f[1-z][i][6] = f[1-z][i][5] + 0.5*(f[1-z][i][1]-f[1-z][i][2])+density*u0/6.0;
                     f[1-z][i][8] = f[1-z][i][7] - 0.5*(f[1-z][i][1]-f[1-z][i][2])+density*u0/6.0;
-                    // printf("after doing north src BC, t = %d\n", t); // sanity check
-                    // printf("array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
-                }
+                    }
             }
             // South sink BC. This will be the bottle neck since only the last task does it. Requires better load balancing.
             if (end == lat_size){
                 for (int i = end - w; i< end ; i++){
-                    //printf("Task %d processing point %d: Bot sink\n", taskid, i); // sanity check
                     f[1-z][i][3] = f[1-z][i-w][3];
                     f[1-z][i][5] = f[1-z][i-w][5];
                     f[1-z][i][7] = f[1-z][i-w][7];
@@ -374,18 +311,15 @@ int main(int argc, char* argv[]){
                     vx = 0;
                     vy = 0;
                     density = 0;
-                    //printf("time = %d, array [%d] point %d:[%f, %f,%f, %f,%f, %f,%f, %f,%f]\n",t, 1-z, i,f[1-z][i][0],f[1-z][i][1],f[1-z][i][2],f[1-z][i][3],f[1-z][i][4],f[1-z][i][5],f[1-z][i][6],f[1-z][i][7],f[1-z][i][8]); // sanity check
                     for (int j = 0; j < 9; j++){
                         vx += ex[j]*f[1-z][i][j];
                         vy += ey[j]*f[1-z][i][j];
                         density += f[1-z][i][j];
-                        //printf("Point %d, fi = %d, t = %d, density = %f, vx = %f, vy = %f\n", i, j, t, density,vx, vy);  // sanity check
                     }
                     rho[i] = density;
                     xVel[i] = vx/density;
                     yVel[i] = vy/density;
-                    //printf("Point %d, t = %d, rho = %f, xVel = %f, yVel = %f\n",i, t, rho[i], xVel[i], yVel[i]);  // sanity check
-                }
+                    }
             z = 1-z; // curent set is the new set
         }
         // finally send work back to master
