@@ -37,5 +37,13 @@ For example:
 
 tells the program to compute the channel flow for a 1000x40 grid, for 8500 steps, for 10 times with the number of threads set to 1, 2, 3, ... , with execution times taken for each iteration. The density and horizontal velocity maps are written into file for the run with 5 threads. 
 
+## Visualize the maps
 
+Just run visualizePlot.py from the command line and supplying the density/velocity text files produced by the main code as command line argument and it should do its magic. 
+
+## Notes on requirements
+
+You probably need C++11 or more to run compile the codes.
+
+Probably need Python 3.8+ or something, with numpy and matplotlib installed too in order to run the graph plotting script. 
 
